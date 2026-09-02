@@ -25,14 +25,20 @@ extension AntigravityLocalReader {
         var failure: Error?
         var databaseBytes = 0
         var databaseRows = 0
+        var stepDatabaseBytes = 0
+        var stepDatabaseRows = 0
 
         var payloadLimit: Int {
             guard self.budget.statistics.rows < self.budget.limits.rows,
-                  self.databaseRows < self.budget.limits.rowsPerDatabase else { return 0 }
+                  self.budget.statistics.stepRows < self.budget.limits.rows,
+                  self.databaseRows < self.budget.limits.rowsPerDatabase,
+                  self.stepDatabaseRows < self.budget.limits.rowsPerDatabase else { return 0 }
             return min(
                 self.budget.limits.blobBytes,
                 self.budget.limits.databaseBytes - self.databaseBytes,
-                self.budget.limits.bytes - self.budget.statistics.attemptedBytes)
+                self.budget.limits.databaseBytes - self.stepDatabaseBytes,
+                self.budget.limits.bytes - self.budget.statistics.attemptedBytes,
+                self.budget.limits.bytes - self.budget.statistics.stepAttemptedBytes)
         }
 
         init(budget: Budget) {
@@ -105,6 +111,7 @@ extension AntigravityLocalReader {
         if let failure = progress.failure { throw failure }
         guard supported else { return SourceResult(isComplete: false) }
         sqlite3_limit(database, SQLITE_LIMIT_LENGTH, Int32(maximumValueBytes))
+        let stepTimestamps = try self.readStepTimestamps(database, progress: progress)
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         // length(BLOB) reads its size without loading the payload. The non-deterministic limit is
@@ -120,7 +127,10 @@ extension AntigravityLocalReader {
         guard prepared == SQLITE_OK, let statement else { return SourceResult(isComplete: false) }
         sqlite3_bind_int64(statement, 1, Int64(min(budget.limits.rowsPerDatabase, 10000) + 1))
         return try self.readRows(
-            statement, session: url.deletingPathExtension().lastPathComponent, progress: progress)
+            statement,
+            session: url.deletingPathExtension().lastPathComponent,
+            stepTimestamps: stepTimestamps,
+            progress: progress)
         #else
         return SourceResult(isComplete: false)
         #endif
@@ -130,6 +140,7 @@ extension AntigravityLocalReader {
     private static func readRows(
         _ statement: OpaquePointer,
         session: String,
+        stepTimestamps: [String: Int64],
         progress: SQLProgress) throws -> SourceResult
     {
         let budget = progress.budget
@@ -173,16 +184,84 @@ extension AntigravityLocalReader {
                 continue
             }
             // Validate exactly once while the single SQL snapshot is held; buffer only typed events.
-            guard let turn = try AntigravityProtoReader.parseTurn(bytes, checkCancellation: budget.check),
-                  let event = Event(
-                      session: session, row: row, turn: turn, cacheWrite: 0)
+            guard let turn = try AntigravityProtoReader.parseTurn(
+                bytes,
+                stepTimestamps: stepTimestamps,
+                checkCancellation: budget.check)
             else {
+                result.isComplete = false
+                continue
+            }
+            if turn.isConversationAggregate { continue }
+            guard let event = Event(session: session, row: row, turn: turn, cacheWrite: 0) else {
                 result.isComplete = false
                 continue
             }
             result.events.append(event)
         }
         return result
+    }
+
+    private static func readStepTimestamps(
+        _ database: OpaquePointer,
+        progress: SQLProgress) throws -> [String: Int64]
+    {
+        let budget = progress.budget
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        // The steps table records execution steps in modern Antigravity databases (agy 1.1.18+).
+        // Step type 15 holds generation metadata with the authoritative wall-clock timestamp and bot_id.
+        let query = """
+        SELECT CASE WHEN typeof(metadata) = 'blob' THEN length(metadata) END,
+            CASE WHEN typeof(metadata) = 'blob' AND length(metadata) <= antigravity_payload_limit() THEN metadata END
+        FROM main.steps NOT INDEXED WHERE step_type = 15 LIMIT ?
+        """
+        guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK,
+              let statement
+        else {
+            return [:]
+        }
+        sqlite3_bind_int64(statement, 1, Int64(min(budget.limits.rowsPerDatabase, 10000) + 1))
+        var timestamps: [String: Int64] = [:]
+        while true {
+            try budget.check()
+            let step = sqlite3_step(statement)
+            if let failure = progress.failure { throw failure }
+            if step == SQLITE_DONE { break }
+            guard step == SQLITE_ROW else { break }
+            let payload = SQLitePayload(statement: statement, column: 1)
+            budget.statistics.materializedPayloadBytes += payload.byteCount
+            // Steps have a separate per-database and global allowance so modern
+            // histories do not halve the established 50k/128MiB aggregate generation capacity.
+            progress.stepDatabaseRows += 1
+            try budget.chargeStepRow()
+            let count = Int(sqlite3_column_int64(statement, 0))
+            let attemptedBytes = max(count, payload.byteCount)
+            try budget.chargeStepBytes(attemptedBytes)
+            guard progress.stepDatabaseRows <= budget.limits.rowsPerDatabase,
+                  attemptedBytes <= budget.limits.databaseBytes - progress.stepDatabaseBytes
+            else {
+                throw ScanFailure.exhausted
+            }
+            progress.stepDatabaseBytes += attemptedBytes
+            guard count > 0, count <= budget.limits.blobBytes,
+                  let bytes = payload.copy(declaredCount: count, limit: budget.limits.blobBytes)
+            else {
+                continue
+            }
+            do {
+                if let stepMeta = try AntigravityProtoReader.parseStepMetadata(
+                    bytes[...], checkCancellation: budget.check),
+                   let botID = stepMeta.botID,
+                   let ts = stepMeta.timestampMs
+                {
+                    timestamps[botID] = ts
+                }
+            } catch AntigravityLocalReader.ScanFailure.invalid {
+                continue
+            }
+        }
+        return timestamps
     }
     #endif
 }
