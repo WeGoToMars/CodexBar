@@ -290,16 +290,29 @@ def run_live_test():
 
     cur.execute("SELECT idx, metadata FROM steps WHERE step_type = 15 ORDER BY idx DESC LIMIT 1")
     step_row = cur.fetchone()
-    cur.execute("SELECT idx, data FROM gen_metadata ORDER BY idx DESC LIMIT 1")
-    gen_row = cur.fetchone()
-    conn.close()
-
-    if not step_row or not gen_row:
-        print("[-] Could not find step or generation rows in database.")
+    if not step_row:
+        print("[-] Could not find step rows in database.")
+        conn.close()
         return
-
     step_ts_ms, step_bot_id = extract_step_timestamp_and_bot_id(step_row[1])
-    gen_info = extract_gen_metadata_info(gen_row[1])
+    # Match the live verifier's step to its generation row - do not independently
+    # select the final gen_metadata row, as it may be a conversation aggregate
+    # (which the Swift reader skips via isConversationAggregate).
+    gen_row = None
+    gen_info = None
+    if step_bot_id:
+        cur.execute("SELECT idx, data FROM gen_metadata ORDER BY idx DESC")
+        for idx, data in cur.fetchall():
+            info = extract_gen_metadata_info(data)
+            if info and info.get("bot_id") == step_bot_id:
+                gen_row = (idx, data)
+                gen_info = info
+                break
+    if gen_row is None:
+        print("[-] Could not find matching generation row for step bot_id.")
+        conn.close()
+        return
+    conn.close()
 
     step_sec = step_ts_ms / 1000.0 if step_ts_ms else 0
     step_dt = datetime.datetime.fromtimestamp(step_sec, tz=datetime.timezone.utc)

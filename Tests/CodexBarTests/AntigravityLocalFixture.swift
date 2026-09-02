@@ -81,9 +81,10 @@ final class AntigravityLocalFixture: Sendable {
         }
         if createStepsTable {
             try Self.execute(database, "CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, metadata BLOB)")
-            let metadatas = stepMetadatas ?? blobs.indices.map { _ in Self.stepMetadata() }
-            for (index, meta) in metadatas.enumerated() {
-                try Self.insertStep(database, row: Int64(index), stepType: 15, metadata: meta)
+            if let metadatas = stepMetadatas {
+                for (index, meta) in metadatas.enumerated() {
+                    try Self.insertStep(database, row: Int64(index), stepType: 15, metadata: meta)
+                }
             }
         }
         return url

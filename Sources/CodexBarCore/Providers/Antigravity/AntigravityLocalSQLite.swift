@@ -27,18 +27,26 @@ extension AntigravityLocalReader {
         var databaseRows = 0
         var stepDatabaseBytes = 0
         var stepDatabaseRows = 0
+        enum ScanPhase { case steps, generations }
+        var phase: ScanPhase = .steps
 
         var payloadLimit: Int {
-            guard self.budget.statistics.rows < self.budget.limits.rows,
-                  self.budget.statistics.stepRows < self.budget.limits.rows,
-                  self.databaseRows < self.budget.limits.rowsPerDatabase,
-                  self.stepDatabaseRows < self.budget.limits.rowsPerDatabase else { return 0 }
-            return min(
-                self.budget.limits.blobBytes,
-                self.budget.limits.databaseBytes - self.databaseBytes,
-                self.budget.limits.databaseBytes - self.stepDatabaseBytes,
-                self.budget.limits.bytes - self.budget.statistics.attemptedBytes,
-                self.budget.limits.bytes - self.budget.statistics.stepAttemptedBytes)
+            switch phase {
+            case .steps:
+                guard self.budget.statistics.stepRows < self.budget.limits.rows,
+                      self.stepDatabaseRows < self.budget.limits.rowsPerDatabase else { return 0 }
+                return min(
+                    self.budget.limits.blobBytes,
+                    self.budget.limits.databaseBytes - self.stepDatabaseBytes,
+                    self.budget.limits.bytes - self.budget.statistics.stepAttemptedBytes)
+            case .generations:
+                guard self.budget.statistics.rows < self.budget.limits.rows,
+                      self.databaseRows < self.budget.limits.rowsPerDatabase else { return 0 }
+                return min(
+                    self.budget.limits.blobBytes,
+                    self.budget.limits.databaseBytes - self.databaseBytes,
+                    self.budget.limits.bytes - self.budget.statistics.attemptedBytes)
+            }
         }
 
         init(budget: Budget) {
@@ -111,7 +119,9 @@ extension AntigravityLocalReader {
         if let failure = progress.failure { throw failure }
         guard supported else { return SourceResult(isComplete: false) }
         sqlite3_limit(database, SQLITE_LIMIT_LENGTH, Int32(maximumValueBytes))
+        progress.phase = .steps
         let stepTimestamps = try self.readStepTimestamps(database, progress: progress)
+        progress.phase = .generations
         var statement: OpaquePointer?
         defer { sqlite3_finalize(statement) }
         // length(BLOB) reads its size without loading the payload. The non-deterministic limit is

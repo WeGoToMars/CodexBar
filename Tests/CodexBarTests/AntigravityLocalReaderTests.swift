@@ -287,6 +287,30 @@ struct AntigravityLocalReaderTests {
     }
 
     @Test
+    func `exact ten thousand step boundary preserves generation budget`() throws {
+        // Single DB with exactly rowsPerDatabase (10_000) steps + 10_000 generations must remain complete - phase-local limits.
+        let fixture = try Fixture()
+        let count = 10_000
+        var blobs: [[UInt8]] = []
+        var steps: [[UInt8]] = []
+        for i in 0..<count {
+            let bot = "bot-exact-10k-\(i)"
+            blobs.append(Fixture.modernBlob(botID: bot, seconds: nil))
+            steps.append(Fixture.stepMetadata(
+                botID: bot,
+                seconds: UInt64(Fixture.now.timeIntervalSince1970) + UInt64(i),
+                nanos: 0))
+        }
+        try fixture.database(blobs: blobs, stepMetadatas: steps)
+        let report = try fixture.report()
+        #expect(report.coverage == .complete)
+        #expect(report.statistics.rows == count)
+        #expect(report.statistics.stepRows == count)
+        #expect(report.report.summary?.totalTokens == count * 198)
+        #expect(report.report.data.first?.requestCount == count)
+    }
+
+    @Test
     func `aggregate modern history preserves global budget across databases`() throws {
         // Three modern DBs each with 10k turns share the 50k aggregate; steps must not consume it.
         let perDB = 10_000

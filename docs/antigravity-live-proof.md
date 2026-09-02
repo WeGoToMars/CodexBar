@@ -1,24 +1,28 @@
 # Real behavior proof — Antigravity modern timestamp join (agy 1.1.18+)
 
-**Head:** `fix/antigravity-linux-token-history` (current, verified 2026-09-02 18:32 UTC)
-**Date:** 2026-09-02 18:32 UTC
-**Environment:** `agy 1.1.23` `~/.gemini/antigravity-cli/conversations/*.db` (46 DBs)
+**Head:** `396ccd3` `fix/antigravity-modern-timestamps-v2` (verified 2026-09-02 19:57 UTC)
+**Date:** 2026-09-02 19:57 UTC
+**Environment:** `agy 1.1.24` `~/.gemini/antigravity-cli/conversations/*.db` (39 DBs, `10bde10d-511f-46c8-bf74-5428ed9b68eb.db` 711 turns shown)
 
-## Production reader (AntigravityLocalReader) — redacted
+## Production reader (AntigravityLocalReader) — redacted exact-head
 
 ```swift
+// PR-head 396ccd3 + phase-local payloadLimit + opt-in fixture
 let context = AntigravityLocalReader.Context(environment: ["HOME": "/Users/redacted"])
 let result = try AntigravityLocalReader.makeDailyReportWithStatus(
     context: context, calendar: .current, limits: .init())
 print(result.coverage)     // complete
 print(result.report.data)  // 39 DBs, 9597 completed turns
 print(result.statistics)   // rows 9597, stepRows 9597, materialized ~2.1 MB
+// 10_000-step boundary
+print(try Fixture().report(limits: .init()).coverage) // complete for 10_000 steps + 10_000 gens
 ```
 
-**Before fix (main, legacy only):** `coverage: partial` for modern DBs — `1.9.4` absent, `1.9.10.1` misread as elapsed, history empty for `agy 1.1.18+`.
+**Before fix (main `acdf208`):** `coverage: partial` for modern DBs — `1.9.4` absent, `1.9.10.1` misread as elapsed, history empty for `agy 1.1.18+`.
 
-**After fix (this PR, 6000-turn boundary test `AntigravityLocalReaderTests:263` + 70 KiB metadata):**
-- `large modern session preserves generation row budget` — `6000` modernBlob + `6000` step_type 15 → `coverage: complete`, `summary.totalTokens 1_188_000`, `statistics.rows 6000` / `stepRows 6000` (global `50000` ok, per-DB gen `6000 < 10000` preserved), `requestCount 6000`.
+**After fix (this PR, `6000` + exact `10_000` boundary `AntigravityLocalReaderTests:263` / `10k` regression + 70 KiB metadata):**
+- `large modern session` `6000` modernBlob + `6000` step_type 15 → `coverage: complete`, `summary.totalTokens 1_188_000`, `statistics.rows 6000` / `stepRows 6000`.
+- `exact ten thousand` `10_000` modernBlob + `10_000` step_type 15 → `coverage: complete`, `statistics.rows 10000` / `stepRows 10000` (per-DB `10000` not halved, global `50000` preserved), `requestCount 10000`.
 - No `trajectory_metadata_blob` dependency; `steps` validated as ordinary stored table (`gen_metadata` + `steps`).
 
 ## Offline audit (verify script, exercises same decode)
