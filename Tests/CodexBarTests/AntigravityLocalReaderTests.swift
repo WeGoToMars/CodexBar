@@ -229,9 +229,7 @@ struct AntigravityLocalReaderTests {
     @Test
     func `conversation marker with generation evidence remains token history`() throws {
         let fixture = try Fixture()
-        try fixture.database(
-            blobs: [Fixture.conversationMarkerBlob(includeGeneration: true)],
-            createdSeconds: UInt64(Fixture.now.timeIntervalSince1970))
+        try fixture.database(blobs: [Fixture.conversationMarkerBlob(includeGeneration: true)])
 
         let report = try fixture.report()
         #expect(report.coverage == .complete)
@@ -271,7 +269,7 @@ struct AntigravityLocalReaderTests {
         var steps: [[UInt8]] = []
         for i in 0..<count {
             let bot = "bot-boundary-\(i)"
-            blobs.append(Fixture.modernBlob(botID: bot, seconds: nil))
+            blobs.append(Fixture.modernBlob(botID: bot))
             // Use fixture.now + i seconds for deterministic, monotonic clock
             steps.append(Fixture.stepMetadata(
                 botID: bot,
@@ -295,7 +293,7 @@ struct AntigravityLocalReaderTests {
         var steps: [[UInt8]] = []
         for i in 0..<count {
             let bot = "bot-exact-10k-\(i)"
-            blobs.append(Fixture.modernBlob(botID: bot, seconds: nil))
+            blobs.append(Fixture.modernBlob(botID: bot))
             steps.append(Fixture.stepMetadata(
                 botID: bot,
                 seconds: UInt64(Fixture.now.timeIntervalSince1970) + UInt64(i),
@@ -322,7 +320,7 @@ struct AntigravityLocalReaderTests {
             var steps: [[UInt8]] = []
             for i in 0..<perDB {
                 let bot = "bot-agg-\(db)-\(i)"
-                blobs.append(Fixture.modernBlob(botID: bot, seconds: nil))
+                blobs.append(Fixture.modernBlob(botID: bot))
                 steps.append(Fixture.stepMetadata(
                     botID: bot,
                     seconds: UInt64(Fixture.now.timeIntervalSince1970) + UInt64(i),
