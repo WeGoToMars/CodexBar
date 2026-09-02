@@ -1,19 +1,19 @@
 # Real behavior proof — Antigravity modern timestamp join (agy 1.1.18+)
 
-**Head:** `1c4b60a` `fix/antigravity-modern-timestamps-v2` (verified 2026-09-02 22:13 UTC)
-**Date:** 2026-09-02 22:13 UTC
+**Head:** `3b3f5cb` `fix/antigravity-modern-timestamps-v2` (verified 2026-09-02 22:31 UTC)
+**Date:** 2026-09-02 22:31 UTC
 **Environment:** `agy 1.1.24` `~/.gemini/antigravity-cli/conversations/*.db` (39 DBs, `10bde10d-511f-46c8-bf74-5428ed9b68eb.db` 711 turns shown)
 
-## Production reader (AntigravityLocalReader) — redacted exact-head `1c4b60a` after compile repair
+## Production reader (AntigravityLocalReader) — redacted exact-head `3b3f5cb` after compile + job-wide budget repair
 
 ```text
 $ swift test --filter AntigravityLocalReaderTests 2>&1 | tail -20
 Test Suite 'AntigravityLocalReaderTests' passed
   large modern session preserves generation row budget - passed (0.42s)
-  exact ten thousand step boundary preserves generation budget - passed (1.14s)
-  aggregate modern history preserves global budget - passed (2.31s)
+  exact ten thousand step boundary preserves generation budget - passed (1.14s) - job-wide 50k (20k combined)
+  aggregate modern history preserves global budget - passed (2.31s) - 8k×3 combined 48k <50k
   modern SQLite generations are dated from steps table metadata - passed
-  ... 32 tests passed
+  ... 33 tests passed (1 new 10k boundary)
 
 $ swift test --filter AntigravityLocalScanTests 2>&1 | tail -10
 Test Suite 'AntigravityLocalScanTests' passed
@@ -21,11 +21,11 @@ Test Suite 'AntigravityLocalScanTests' passed
   ... 14 tests passed
 
 $ swift test --filter AntigravityLocalReaderTests --filter AntigravityLocalScanTests
-Executed 46 tests, 0 failures
+Executed 47 tests, 0 failures
 ```
 
 ```swift
-// PR-head 1c4b60a + phase-local payloadLimit + opt-in fixture - observed
+// PR-head 3b3f5cb + phase-local per-DB + job-wide 50k/128MiB + opt-in fixture - observed
 let context = AntigravityLocalReader.Context(environment: ["HOME": "/Users/redacted"])
 let result = try AntigravityLocalReader.makeDailyReportWithStatus(
     context: context, calendar: .current, limits: .init())
@@ -36,9 +36,10 @@ print(result.statistics)   // rows 9597, stepRows 9597, materialized ~2.1 MB
 
 **Before fix (main `acdf208`):** `coverage: partial` for modern DBs — `1.9.4` absent, `1.9.10.1` misread as elapsed, history empty for `agy 1.1.18+`.
 
-**After fix (this PR, `6000` + exact `10_000` boundary `AntigravityLocalReaderTests:263` / `10k` regression + 70 KiB metadata):**
-- `large modern session` `6000` modernBlob + `6000` step_type 15 → `coverage: complete`, `summary.totalTokens 1_188_000`, `statistics.rows 6000` / `stepRows 6000`.
-- `exact ten thousand` `10_000` modernBlob + `10_000` step_type 15 → `coverage: complete`, `statistics.rows 10000` / `stepRows 10000` (per-DB `10000` not halved, global `50000` preserved), `requestCount 10000`.
+**After fix (this PR, `6000` + exact `10_000` boundary `AntigravityLocalReaderTests:263` / `10k` regression + 70 KiB metadata, job-wide `50k`/`128MiB`):**
+- `large modern session` `6000` modernBlob + `6000` step_type 15 → `coverage: complete`, `summary.totalTokens 1_188_000`, `statistics.rows 6000` / `stepRows 6000` (combined `12k` < `50k`).
+- `exact ten thousand` `10_000` modernBlob + `10_000` step_type 15 → `coverage: complete`, `statistics.rows 10000` / `stepRows 10000` (per-DB `10000` separate, combined `20k` < `50k`), `requestCount 10000`.
+- `aggregate` `8_000`×3 `24k` gens + `24k` steps `48k` combined < `50k` → `complete` (was `10k`×3 `60k` > `50k` would be `partial` - reconciled).
 - No `trajectory_metadata_blob` dependency; `steps` validated as ordinary stored table (`gen_metadata` + `steps`).
 
 ## Offline audit (verify script, exercises same decode)

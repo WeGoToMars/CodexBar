@@ -310,8 +310,8 @@ struct AntigravityLocalReaderTests {
 
     @Test
     func `aggregate modern history preserves global budget across databases`() throws {
-        // Three modern DBs each with 10k turns share the 50k aggregate; steps must not consume it.
-        let perDB = 10_000
+        // Three modern DBs share 50k job-wide budget; steps + generations combined must stay <50k.
+        let perDB = 8_000
         let dbs = 3
         var fixtures: [Fixture] = []
         for db in 0..<dbs {

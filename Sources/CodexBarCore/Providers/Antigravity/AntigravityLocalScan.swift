@@ -90,26 +90,26 @@ extension AntigravityLocalReader {
             try self.check()
             let (attempted, overflow) = self.statistics.attemptedBytes.addingReportingOverflow(count)
             self.statistics.attemptedBytes = overflow ? Int.max : attempted
-            guard !overflow, attempted <= self.limits.bytes else { throw ScanFailure.exhausted }
+            guard !overflow, attempted + self.statistics.stepAttemptedBytes <= self.limits.bytes else { throw ScanFailure.exhausted }
         }
 
         func chargeRow() throws {
             try self.check()
             self.statistics.rows += 1
-            guard self.statistics.rows <= self.limits.rows else { throw ScanFailure.exhausted }
+            guard self.statistics.rows + self.statistics.stepRows <= self.limits.rows else { throw ScanFailure.exhausted }
         }
 
         func chargeStepRow() throws {
             try self.check()
             self.statistics.stepRows += 1
-            guard self.statistics.stepRows <= self.limits.rows else { throw ScanFailure.exhausted }
+            guard self.statistics.stepRows + self.statistics.rows <= self.limits.rows else { throw ScanFailure.exhausted }
         }
 
         func chargeStepBytes(_ count: Int) throws {
             try self.check()
             let (attempted, overflow) = self.statistics.stepAttemptedBytes.addingReportingOverflow(count)
             self.statistics.stepAttemptedBytes = overflow ? Int.max : attempted
-            guard !overflow, attempted <= self.limits.bytes else { throw ScanFailure.exhausted }
+            guard !overflow, attempted + self.statistics.attemptedBytes <= self.limits.bytes else { throw ScanFailure.exhausted }
         }
 
         func chargeSchemaBytes(_ count: Int) throws {

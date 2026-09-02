@@ -33,19 +33,19 @@ extension AntigravityLocalReader {
         var payloadLimit: Int {
             switch phase {
             case .steps:
-                guard self.budget.statistics.stepRows < self.budget.limits.rows,
+                guard self.budget.statistics.stepRows + self.budget.statistics.rows < self.budget.limits.rows,
                       self.stepDatabaseRows < self.budget.limits.rowsPerDatabase else { return 0 }
                 return min(
                     self.budget.limits.blobBytes,
                     self.budget.limits.databaseBytes - self.stepDatabaseBytes,
-                    self.budget.limits.bytes - self.budget.statistics.stepAttemptedBytes)
+                    self.budget.limits.bytes - (self.budget.statistics.stepAttemptedBytes + self.budget.statistics.attemptedBytes))
             case .generations:
-                guard self.budget.statistics.rows < self.budget.limits.rows,
+                guard self.budget.statistics.rows + self.budget.statistics.stepRows < self.budget.limits.rows,
                       self.databaseRows < self.budget.limits.rowsPerDatabase else { return 0 }
                 return min(
                     self.budget.limits.blobBytes,
                     self.budget.limits.databaseBytes - self.databaseBytes,
-                    self.budget.limits.bytes - self.budget.statistics.attemptedBytes)
+                    self.budget.limits.bytes - (self.budget.statistics.attemptedBytes + self.budget.statistics.stepAttemptedBytes))
             }
         }
 
