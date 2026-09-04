@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- Antigravity: estimate local token history costs using models.dev catalog prices (API-equivalent estimate, not billed), mirroring Codex subscription behavior with unpriced models remaining cost-less, transparent mixed-coverage disclosure, and token history intact (Related to #53; follows #2181, #3001).
+
 ### Fixed
 - Antigravity: match local token-history timestamps by per-turn IDs when auxiliary or reordered steps would otherwise assign usage to the wrong day, while withholding conflicting evidence and preserving legacy timestamp recovery (#3403). Thanks @WeGoToMars!
 - Codex: retain completed empty session fragments during cost-history scans instead of repeatedly dropping and rediscovering them, without suppressing usage-bearing duplicates or later appended usage (partial fix for #3316; #3402). Thanks @mauriciopolvora!
